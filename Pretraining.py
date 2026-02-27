@@ -20,7 +20,7 @@ def pretrain_evader(
         n_steps=2048,
         batch_size=64,
         gamma=0.99,
-        #device="cpu",
+        device="cuda",
         tensorboard_log="./tb_logs_evader",
     )
 
@@ -28,7 +28,12 @@ def pretrain_evader(
         total_timesteps=total_timesteps,
         tb_log_name="evader_pretrain",
     )
-
+    tot = 0
+    print("\n=== Termination statistics ===")
+    for k, v in env.termination_stats.items():
+        print(f"{k}: {v}")
+        tot += v
+    print(f"Total episodes: {tot}")
     model.save(model_path)
     print(f"[Evader] Saved model to: {model_path}.zip")
     return model

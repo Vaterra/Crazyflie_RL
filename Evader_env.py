@@ -16,10 +16,17 @@ class EvaderPretrainEnv(gym.Env):
 
     def __init__(self):
         super().__init__()
+        self.termination_stats = {
+            "goal": 0,
+            "captured": 0,
+            "evader_out": 0,
+            "chaser_out": 0,
+            "timeout": 0,
+        }
 
         self.sim = Pretraining()
 
-        self.max_acc = 20.0
+        self.max_acc = 1.0
         # Action: evader acc in x,y,z
         self.action_space = spaces.Box(
             low=- self.max_acc,
@@ -27,7 +34,6 @@ class EvaderPretrainEnv(gym.Env):
             shape=(3,),
             dtype=np.float32,
         )
-
         # Observation:
         # [evader_pos(3), evader_vel(3),
         #  chaser_pos(3), chaser_vel(3),
@@ -63,10 +69,10 @@ class EvaderPretrainEnv(gym.Env):
 
     def step(self, action):
         # Scripted chaser
-        chaser_action = chaser_straight_2_evader(self.sim.get_state(), max_acc=self.max_acc)
+        chaser_action = chaser_straight_2_evader(self.sim.get_state(), max_acc=self.max_acc*10)
 
         state, done, info = self.sim.step(
-            evader_action=action,
+            evader_action=action*10,
             chaser_action=chaser_action,
         )
 
@@ -78,10 +84,10 @@ class EvaderPretrainEnv(gym.Env):
 
         # Reward design (evader wants goal + survival)
         reward = 0.0
-        reward -= 0.01 * dist_goal                   # main drive: get closer each step
-        reward += 0.01                               # small survival bonus
-        reward -= 0.01 * max(0.0, 4.0 - dist_chaser) # avoid close chaser
-        reward -= 0.001 * float(np.linalg.norm(action) ** 2)
+        reward += 1 * progress                   # main drive: get closer each step
+        reward -= 0.005  
+        #reward -= 0.01 * max(0.0, 5.0 - dist_chaser) # avoid close chaser
+        #reward -= 0.001 * float(np.linalg.norm(action) ** 2)
 
         if info["evader_reached_goal"]:
             reward += 100.0
@@ -89,16 +95,29 @@ class EvaderPretrainEnv(gym.Env):
             reward -= 100.0
         if info["evader_out"]:
             reward -= 100.0
-
+        if info["timeout"]:
+            reward -= 100.0
         obs = self._get_obs(state)
 
         terminated = (
             info["captured"]
             or info["evader_reached_goal"]
             or info["evader_out"]
-            or info["chaser_out"]
+            #or info["chaser_out"]
         )
 
         truncated = info["timeout"]
+
+        if terminated or truncated:
+            if info["evader_reached_goal"]:
+                self.termination_stats["goal"] += 1
+            elif info["captured"]:
+                self.termination_stats["captured"] += 1
+            elif info["evader_out"]:
+                self.termination_stats["evader_out"] += 1
+            elif info["chaser_out"]:
+                self.termination_stats["chaser_out"] += 1
+            elif info["timeout"]:
+                self.termination_stats["timeout"] += 1
 
         return obs, reward, terminated, truncated, info

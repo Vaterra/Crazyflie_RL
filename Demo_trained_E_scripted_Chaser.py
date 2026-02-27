@@ -22,11 +22,29 @@ def plot_single_rollout(model_path="evader_pretrain_ppo.zip"):
     goal = state["goal"].copy()
 
     done = False
+    prev_pos = state["evader_pos"].copy()
+
+    step_idx = 0
 
     while not done:
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
+
+        state = env.sim.get_state()
+        current_pos = state["evader_pos"]
+
+        # displacement this step
+        step_distance = np.linalg.norm(current_pos - prev_pos)
+
+
+        # 🔹 Append positions every step
+        evader_traj.append(state["evader_pos"].copy())
+        chaser_traj.append(state["chaser_pos"].copy())
+
+        prev_pos = current_pos.copy()
+        step_idx += 1
+        
 
     # After loop finishes:
     print("\n=== Episode Terminated ===")
@@ -49,9 +67,8 @@ def plot_single_rollout(model_path="evader_pretrain_ppo.zip"):
     else:
         print("Reason: Unknown")
 
-    state = env.sim.get_state()
-    evader_traj.append(state["evader_pos"].copy())
-    chaser_traj.append(state["chaser_pos"].copy())
+    #evader_traj.append(state["evader_pos"].copy())
+    #chaser_traj.append(state["chaser_pos"].copy())
 
     evader_traj = np.array(evader_traj)
     chaser_traj = np.array(chaser_traj)
@@ -117,6 +134,17 @@ def plot_single_rollout(model_path="evader_pretrain_ppo.zip"):
 
     ax.set_title("Evader vs Scripted Chaser Trajectory")
     ax.legend()
+
+        # --- Goal sphere (visualizing goal_radius) ---
+    goal_radius = env.sim.goal_radius  # or env.sim.goal_rad
+
+    # Create a sphere around the goal
+    u, v = np.mgrid[0:2*np.pi:40j, 0:np.pi:20j]
+    x = goal[0] + goal_radius * np.cos(u) * np.sin(v)
+    y = goal[1] + goal_radius * np.sin(u) * np.sin(v)
+    z = goal[2] + goal_radius * np.cos(v)
+
+    ax.plot_wireframe(x, y, z, alpha=0.3, linewidth=0.5)
 
     plt.show()
 
