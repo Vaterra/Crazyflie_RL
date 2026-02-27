@@ -33,23 +33,23 @@ class Pretraining:
 
         self.step_count = 0
         
-        self.evader_pos = (
-            rng.uniform(0, self.goal_radius*2),
+        self.evader_pos = np.array([
+            rng.uniform(self.space_size[0]/2-self.goal_radius, self.space_size[0]/2+self.goal_radius),
+            rng.uniform(self.goal_radius*2, self.goal_radius*4),
+            rng.uniform(self.goal_radius*2, self.space_size[2]-self.goal_radius*2)
+        ])
+        self.evader_vel = np.array([0.0, 0.0, 0.0])
+        self.chaser_pos = np.array([
+            rng.uniform(self.space_size[0]/2-self.goal_radius, self.space_size[0]/2+self.goal_radius),
+            rng.uniform(self.space_size[1]/2-self.goal_radius, self.space_size[1]/2+self.goal_radius),
+            rng.uniform(0, self.space_size[2])
+        ])
+        self.chaser_vel = np.array([0.0, 0.0, 0.0])
+        self.goal = np.array([  
+            rng.uniform(self.space_size[0]/2-self.goal_radius, self.space_size[0]/2+self.goal_radius),
             rng.uniform(self.space_size[1]-3*self.goal_radius, self.space_size[1]-self.goal_radius),
             rng.uniform(0, self.space_size[2])
-        )
-        self.evader_vel = (0.0, 0.0, 0.0)
-        self.chaser_pos = (
-            rng.uniform(0, self.space_size[0]),
-            rng.uniform(0, self.space_size[1]),
-            rng.uniform(0, self.space_size[2])
-        )
-        self.chaser_vel = (0.0, 0.0, 0.0)
-        self.goal = (
-            rng.uniform(self.space_size[0]/2 - self.goal_radius, self.space_size[0]/2 + self.goal_radius),
-            rng.uniform(self.space_size[1]-3*self.goal_radius, self.space_size[1]-self.goal_radius),
-            rng.uniform(self.space_size[2]/2-self.goal_radius, self.space_size[2]/2+self.goal_radius)
-        )
+        ])
         return self.get_state()
     
     def get_state(self):
@@ -61,8 +61,6 @@ class Pretraining:
             'goal': self.goal.copy(),
             "step_count": self.step_count
         }
-
-
 
 
     def euler_step(self, position, velocity, acc):
@@ -92,11 +90,8 @@ class Pretraining:
         evader_action = np.asarray(evader_action, dtype=np.float32)
         chaser_action = np.asarray(chaser_action, dtype=np.float32)
 
-        evader_acc = evader_action
-        chaser_acc = chaser_action
-
-        self.evader_pos, self.evader_vel = self.euler_step(self.evader_pos, self.evader_vel, evader_acc)
-        self.chaser_pos, self.chaser_vel = self.euler_step(self.chaser_pos, self.chaser_vel, chaser_acc)
+        self.evader_pos, self.evader_vel = self.euler_step(self.evader_pos, self.evader_vel, evader_action)
+        self.chaser_pos, self.chaser_vel = self.euler_step(self.chaser_pos, self.chaser_vel, chaser_action)
 
         dist = self._distance_evader_chaser()
         goal_dist = self._distance_evader_goal()

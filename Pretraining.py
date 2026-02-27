@@ -1,8 +1,8 @@
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
 
-from evader_env import EvaderPretrainEnv
-from chaser_env import ChaserPretrainEnv
+from Evader_env import EvaderPretrainEnv
+#from chaser_env import ChaserPretrainEnv
 
 
 def pretrain_evader(
@@ -33,6 +33,7 @@ def pretrain_evader(
     print(f"[Evader] Saved model to: {model_path}.zip")
     return model
 
+""""
 def pretrain_chaser(
     total_timesteps: int = 200_000,
     model_path: str = "chaser_pretrain_ppo",
@@ -60,7 +61,7 @@ def pretrain_chaser(
     model.save(model_path)
     print(f"[Chaser] Saved model to: {model_path}.zip")
     return model
-
+"""
 
 if __name__ == "__main__":
     pretrain_evader()
