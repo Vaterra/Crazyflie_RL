@@ -6,7 +6,7 @@ from Evader_env import EvaderPretrainEnv
 
 
 def pretrain_evader(
-    total_timesteps: int = 200_000,
+    total_timesteps: int = 500_000,
     model_path: str = "evader_pretrain_ppo",
 ):
     env = EvaderPretrainEnv()

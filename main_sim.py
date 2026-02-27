@@ -7,7 +7,7 @@ class Pretraining:
     def __init__(
             self,
             space_size=(8, 8, 8),
-            knockout_rad = 0.2,
+            knockout_rad = 0.25,
             top_speed = 5.0,
             dt = 0.1,
             max_steps = 400,

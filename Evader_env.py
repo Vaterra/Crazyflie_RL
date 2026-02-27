@@ -86,8 +86,8 @@ class EvaderPretrainEnv(gym.Env):
         reward = 0.0
         reward += 1 * progress                   # main drive: get closer each step
         reward -= 0.005  
-        #reward -= 0.01 * max(0.0, 5.0 - dist_chaser) # avoid close chaser
-        #reward -= 0.001 * float(np.linalg.norm(action) ** 2)
+        reward -= 0.01 * max(0.0, 5.0 - dist_chaser) # avoid close chaser
+        reward -= 0.001 * float(np.linalg.norm(action) ** 2)
 
         if info["evader_reached_goal"]:
             reward += 100.0

@@ -5,6 +5,10 @@ from mpl_toolkits.mplot3d import Axes3D
 from stable_baselines3 import PPO
 from Evader_env import EvaderPretrainEnv
 
+import numpy as np
+import csv
+from collections import Counter
+
 
 def plot_single_rollout(model_path="evader_pretrain_ppo.zip"):
     env = EvaderPretrainEnv()
@@ -148,6 +152,81 @@ def plot_single_rollout(model_path="evader_pretrain_ppo.zip"):
 
     plt.show()
 
+def evaluate_policy(
+    model_path="evader_pretrain_ppo.zip",
+    n_episodes=1000,
+    csv_path=None,      # e.g. "eval_results.csv"
+):
+    env = EvaderPretrainEnv()
+    model = PPO.load(model_path)
+
+    # Count how often each termination reason occurs
+    reason_counter = Counter()
+
+    # Optional: store per-episode results
+    records = []
+
+    for ep in range(n_episodes):
+        obs, info = env.reset()
+        done = False
+
+        step_count = 0
+        total_reward = 0.0
+
+        last_info = None
+
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+
+            total_reward += reward
+            step_count += 1
+            last_info = info
+
+        # Determine termination reason (same logic as in your plotting code)
+        if last_info is None:
+            reason = "unknown"
+        elif last_info.get("evader_reached_goal", False):
+            reason = "evader_reached_goal"
+        elif last_info.get("captured", False):
+            reason = "captured"
+        elif last_info.get("evader_out", False):
+            reason = "evader_out"
+        elif last_info.get("chaser_out", False):
+            reason = "chaser_out"
+        elif last_info.get("timeout", False):
+            reason = "timeout"
+        else:
+            reason = "unknown"
+
+        reason_counter[reason] += 1
+
+        records.append({
+            "episode": ep,
+            "reason": reason,
+            "steps": step_count,
+            "total_reward": float(total_reward),
+            "distance": float(last_info.get("distance", np.nan)) if last_info else np.nan,
+            "goal_distance": float(last_info.get("goal_distance", np.nan)) if last_info else np.nan,
+        })
+
+    # Print summary
+    print(f"\n=== Evaluation over {n_episodes} episodes ===")
+    for reason, count in reason_counter.items():
+        pct = 100.0 * count / n_episodes
+        print(f"{reason:20s}: {count:4d} episodes ({pct:5.1f}%)")
+
+    # Optionally save to CSV for later analysis
+    if csv_path is not None:
+        fieldnames = ["episode", "reason", "steps", "total_reward", "distance", "goal_distance"]
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in records:
+                writer.writerow(row)
+        print(f"\nSaved detailed results to {csv_path}")
 
 if __name__ == "__main__":
+    evaluate_policy()
     plot_single_rollout()
