@@ -1,0 +1,14 @@
+
+def chaser_straight_2_defender(self, chaser_pos, evader_pos, top_speed):
+    # Move towards the defender
+    dx = evader_pos[0] - chaser_pos[0]
+    dy = evader_pos[1] - chaser_pos[1]
+    dz = evader_pos[2] - chaser_pos[2]
+    distance = (dx**2 + dy**2 + dz**2)**0.5
+    if distance > 0:
+        vx = dx / distance * top_speed
+        vy = dy / distance * top_speed
+        vz = dz / distance * top_speed
+        vel = (vx, vy, vz)
+        return vel
+    return 0, 0, 0
