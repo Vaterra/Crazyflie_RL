@@ -243,6 +243,6 @@ def evaluate_policy(
 
 if __name__ == "__main__":
     modelpath = "chaser_pretrain_ppo.zip" # "evader_pretrain_ppo.zip"
-    n = 1000
+    n = 100
     evaluate_policy(modelpath, n_episodes=n)
     plot_single_rollout(modelpath)

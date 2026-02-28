@@ -41,7 +41,7 @@ def pretrain_evader(
 
 
 def pretrain_chaser(
-    total_timesteps: int = 200_000,
+    total_timesteps: int = 500_000,
     model_path: str = "chaser_pretrain_ppo",
 ):
     env = ChaserPretrainEnv()
@@ -63,7 +63,7 @@ def pretrain_chaser(
         total_timesteps=total_timesteps,
         tb_log_name="chaser_pretrain",
     )
-    
+
     tot = 0
     print("\n=== Termination statistics ===")
     for k, v in env.termination_stats.items():
