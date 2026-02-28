@@ -23,7 +23,7 @@ def evader_straight_2_goal(state, max_acc: float):
     evader_pos = state["evader_pos"]
     goal_pos = state["goal"]
 
-    direction = evader_pos - goal_pos
+    direction = goal_pos - evader_pos
     distance = np.linalg.norm(direction)
 
     if distance < 1e-6:

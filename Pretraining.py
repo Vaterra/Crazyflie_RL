@@ -2,7 +2,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
 
 from Evader_env import EvaderPretrainEnv
-#from chaser_env import ChaserPretrainEnv
+from Chaser_env import ChaserPretrainEnv
 
 
 def pretrain_evader(
@@ -34,11 +34,12 @@ def pretrain_evader(
         print(f"{k}: {v}")
         tot += v
     print(f"Total episodes: {tot}")
+
     model.save(model_path)
     print(f"[Evader] Saved model to: {model_path}.zip")
     return model
 
-""""
+
 def pretrain_chaser(
     total_timesteps: int = 200_000,
     model_path: str = "chaser_pretrain_ppo",
@@ -62,11 +63,19 @@ def pretrain_chaser(
         total_timesteps=total_timesteps,
         tb_log_name="chaser_pretrain",
     )
+    
+    tot = 0
+    print("\n=== Termination statistics ===")
+    for k, v in env.termination_stats.items():
+        print(f"{k}: {v}")
+        tot += v
+    print(f"Total episodes: {tot}")
 
     model.save(model_path)
     print(f"[Chaser] Saved model to: {model_path}.zip")
     return model
-"""
+
 
 if __name__ == "__main__":
-    pretrain_evader()
+    pretrain_chaser()
+    #pretrain_evader()

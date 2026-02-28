@@ -4,14 +4,25 @@ from mpl_toolkits.mplot3d import Axes3D
 
 from stable_baselines3 import PPO
 from Evader_env import EvaderPretrainEnv
+from Chaser_env import ChaserPretrainEnv
+
 
 import numpy as np
 import csv
 from collections import Counter
 
 
-def plot_single_rollout(model_path="evader_pretrain_ppo.zip"):
-    env = EvaderPretrainEnv()
+def plot_single_rollout(model_path):
+    if model_path == "evader_pretrain_ppo.zip":
+        print("=========================================")
+        print("Loaded trained evader")
+        print("=========================================")
+        env = EvaderPretrainEnv()
+    else:
+        print("=========================================")
+        print("Loaded trained chaser")
+        print("=========================================")
+        env = ChaserPretrainEnv()
     space_size = env.sim.space_size
     model = PPO.load(model_path)
 
@@ -153,11 +164,14 @@ def plot_single_rollout(model_path="evader_pretrain_ppo.zip"):
     plt.show()
 
 def evaluate_policy(
-    model_path="evader_pretrain_ppo.zip",
-    n_episodes=1000,
+    model_path,
+    n_episodes=10,
     csv_path=None,      # e.g. "eval_results.csv"
 ):
-    env = EvaderPretrainEnv()
+    if model_path == "evader_pretrain_ppo.zip":
+        env = EvaderPretrainEnv()
+    else:
+        env = ChaserPretrainEnv()
     model = PPO.load(model_path)
 
     # Count how often each termination reason occurs
@@ -228,5 +242,7 @@ def evaluate_policy(
         print(f"\nSaved detailed results to {csv_path}")
 
 if __name__ == "__main__":
-    evaluate_policy()
-    plot_single_rollout()
+    modelpath = "chaser_pretrain_ppo.zip" # "evader_pretrain_ppo.zip"
+    n = 1000
+    evaluate_policy(modelpath, n_episodes=n)
+    plot_single_rollout(modelpath)
