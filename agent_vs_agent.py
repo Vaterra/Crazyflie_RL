@@ -8,7 +8,7 @@ from main_sim import Pretraining
 # === CONFIG ===
 EVADER_MODEL_PATH = "evader_pretrain_ppo.zip"      # <- change if needed
 CHASER_MODEL_PATH = "chaser_pretrain_ppo.zip"      # <- change if needed
-N_EPISODES = 50
+N_EPISODES = 10
 ACTION_SCALE = 10.0   # same scaling you used during training (action * 10)
 
 
@@ -136,7 +136,7 @@ def run_demo():
         )
 
         # Highest priority: evader reaches goal
-        if info.get("evader_reached_goal"):
+        if info.get("timeout"): #evader_reached_goal
             best_goal_episode = episode_data
 
         # Second priority: captured

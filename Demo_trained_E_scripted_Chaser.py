@@ -242,7 +242,7 @@ def evaluate_policy(
         print(f"\nSaved detailed results to {csv_path}")
 
 if __name__ == "__main__":
-    modelpath = "chaser_pretrain_ppo.zip" # "evader_pretrain_ppo.zip"
+    modelpath = "evader_pretrain_ppo.zip" # "evader_pretrain_ppo.zip", chaser_treained_model.zip
     n = 100
     evaluate_policy(modelpath, n_episodes=n)
     plot_single_rollout(modelpath)

@@ -1,0 +1,265 @@
+from dataclasses import dataclass
+from intrusion_curriculum import CurriculumSpec
+from typing import Optional, Dict, Any, Tuple
+import numpy as np
+import gymnasium as gym
+from gymnasium import spaces
+
+from intrusion_curriculum import CurriculumSpec, Curriculum
+from intrusion_policies import BasePolicy
+
+
+def safe_norm(x: np.ndarray, eps: float = 1e-9) -> float:
+    return float(np.linalg.norm(x) + eps)
+
+
+def saturate_vec(v: np.ndarray, vmax: float) -> np.ndarray:
+    n = safe_norm(v)
+    if n > vmax:
+        v = v / n * vmax
+    return v.astype(np.float32)
+
+
+@dataclass
+class SingleCfg:
+    spec: CurriculumSpec = CurriculumSpec()
+    use_eval_params: bool = True
+    eta: float = 1.0  # ignored if use_eval_params=True
+
+
+class IntrusionImpulseSingleEnv(gym.Env):
+    """
+    Single-agent wrapper:
+      role='defender' => RL controls defender, opponent controls intruder
+      role='intruder' => RL controls intruder, opponent controls defender
+
+    Action: normalized dv in [-1,1]^3, scaled by dv_max_{role}.
+    """
+
+    def __init__(self, role: str, opponent: BasePolicy, cfg: SingleCfg = SingleCfg(), seed: int = 0):
+        super().__init__()
+        assert role in ("defender", "intruder")
+        self.role = role
+        self.opp_role = "intruder" if role == "defender" else "defender"
+        self.opponent = opponent
+        self.rng = np.random.default_rng(seed)
+
+        self.cspec = cfg.spec if cfg.spec is not None else CurriculumSpec()
+        self.cur = Curriculum(self.cspec)
+        self.use_eval_params = cfg.use_eval_params
+        self.eta = float(cfg.eta)
+
+        self.dt = self.cspec.dt_eval if self.use_eval_params else self.cspec.dt_train
+        self.max_steps = int(round(self.cspec.T / self.dt))
+
+        self.pD = np.zeros(3, np.float32)
+        self.pI = np.zeros(3, np.float32)
+        self.vD = np.zeros(3, np.float32)
+        self.vI = np.zeros(3, np.float32)
+        self.t = 0
+
+        self.prev_d_DI = None
+        self.prev_d_Ig = None
+
+        self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
+        self.observation_space = spaces.Box(-1.0, 1.0, shape=(15,), dtype=np.float32)
+
+        self.room_span = (self.cspec.room_max - self.cspec.room_min).astype(np.float32)
+        self.room_diag = float(np.linalg.norm(self.room_span))
+
+    def _get_params(self) -> dict:
+        return self.cur.eval_params() if self.use_eval_params else self.cur.params(self.eta)
+
+    def _sample_intruder(self) -> np.ndarray:
+        goal = self.cspec.goal
+        for _ in range(5000):
+            p = self.rng.uniform(self.cspec.room_min, self.cspec.room_max).astype(np.float32)
+            if np.linalg.norm(p - goal) >= self.cspec.intruder_min_dist:
+                return p
+        return self.rng.uniform(self.cspec.room_min, self.cspec.room_max).astype(np.float32)
+
+    def _sample_defender(self) -> np.ndarray:
+        goal = self.cspec.goal
+        for _ in range(5000):
+            u = self.rng.normal(size=3).astype(np.float32)
+            u /= (np.linalg.norm(u) + 1e-9)
+            r = float(self.rng.uniform(0.0, self.cspec.defender_max_dist))
+            p = goal + u * r
+            if np.all(p >= self.cspec.room_min) and np.all(p <= self.cspec.room_max):
+                return p.astype(np.float32)
+        return np.clip(goal.copy(), self.cspec.room_min, self.cspec.room_max).astype(np.float32)
+
+    def _make_obs(self, role: str) -> np.ndarray:
+        goal = self.cspec.goal
+        if role == "defender":
+            pS, vS = self.pD, self.vD
+            pO, vO = self.pI, self.vI
+        else:
+            pS, vS = self.pI, self.vI
+            pO, vO = self.pD, self.vD
+
+        dp = (pO - pS).astype(np.float32)
+        dv = (vO - vS).astype(np.float32)
+        d = float(np.linalg.norm(dp))
+        g = (goal - pS).astype(np.float32)
+        dg = float(np.linalg.norm(g))
+
+        dp_n = np.clip(dp / self.room_span, -1, 1)
+        dv_n = np.clip(dv / self.cspec.v_scale, -1, 1)
+        d_n = np.clip(d / self.room_diag, 0, 1) * 2 - 1
+        g_n = np.clip(g / self.room_span, -1, 1)
+        dg_n = np.clip(dg / self.room_diag, 0, 1) * 2 - 1
+        v_n = np.clip(vS / self.cspec.v_scale, -1, 1)
+        t_n = 2.0 * (self.t / self.max_steps) - 1.0
+
+        obs = np.concatenate([np.array([t_n], np.float32),
+                              dp_n,
+                              np.array([d_n], np.float32),
+                              dv_n,
+                              g_n,
+                              np.array([dg_n], np.float32),
+                              v_n], axis=0)
+        return obs.astype(np.float32)
+
+    def _apply_dv(self, who: str, a: np.ndarray, params: dict) -> tuple[bool, float]:
+        """
+        Apply dv action to chosen agent.
+        Returns (clipped_flag, dv_norm_sq)
+        """
+        a = np.clip(a, -1, 1).astype(np.float32)
+
+        if who == "defender":
+            dv_max = float(params["dv_max_D"])
+            v_max = float(params["v_max_D"])
+            v = self.vD
+            p = self.pD
+        else:
+            dv_max = float(params["dv_max_I"])
+            v_max = float(params["v_max_I"])
+            v = self.vI
+            p = self.pI
+
+        dv_raw = a * dv_max
+        dv = saturate_vec(dv_raw, dv_max)
+        dv_norm_sq = float(np.dot(dv, dv))
+
+        v = v + dv
+        v = saturate_vec(v, v_max)
+
+        p_new = p + v * self.dt
+        p_clip = np.clip(p_new, self.cspec.room_min, self.cspec.room_max)
+        clipped = bool(np.any(p_new != p_clip))
+        p = p_clip.astype(np.float32)
+
+        if who == "defender":
+            self.vD, self.pD = v, p
+        else:
+            self.vI, self.pI = v, p
+
+        return clipped, dv_norm_sq
+
+    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
+        self.t = 0
+        if hasattr(self.opponent, "reset"):
+            self.opponent.reset()
+
+        self.pI = self._sample_intruder()
+        self.pD = self._sample_defender()
+        self.vI[:] = 0.0
+        self.vD[:] = 0.0
+
+        self.prev_d_DI = float(np.linalg.norm(self.pI - self.pD))
+        self.prev_d_Ig = float(np.linalg.norm(self.pI - self.cspec.goal))
+
+        return self._make_obs(self.role), {}
+
+    def step(self, action: np.ndarray):
+        params = self._get_params()
+
+        # opponent action
+        opp_obs = self._make_obs(self.opp_role)
+        state_for_opp = dict(
+            pD=self.pD.copy(), pI=self.pI.copy(),
+            vD=self.vD.copy(), vI=self.vI.copy(),
+            goal=self.cspec.goal.copy(),
+            **params
+        )
+        opp_action = self.opponent.act(opp_obs, state_for_opp)
+
+        if self.role == "defender":
+            aD, aI = action, opp_action
+        else:
+            aD, aI = opp_action, action
+
+        clippedD, dvD2 = self._apply_dv("defender", aD, params)
+        clippedI, dvI2 = self._apply_dv("intruder", aI, params)
+
+        self.t += 1
+
+        d_DI = float(np.linalg.norm(self.pI - self.pD))
+        d_Ig = float(np.linalg.norm(self.pI - self.cspec.goal))
+
+        caught = d_DI <= float(params["r_cap"])
+        reached = d_Ig <= float(params["r_obj"])
+        timeout = self.t >= self.max_steps
+
+        # prediction (constant velocity)
+        tp = float(params["tp"])
+        pD_pred = self.pD + self.vD * tp
+        pI_pred = self.pI + self.vI * tp
+        d_DI_pred = float(np.linalg.norm(pI_pred - pD_pred))
+        d_Ig_pred = float(np.linalg.norm(pI_pred - self.cspec.goal))
+
+        rcap = float(params["r_cap"])
+        robj = float(params["r_obj"])
+        dsafe = self.cspec.safe_mult * robj
+
+        # prediction rewards
+        # defender: be predicted-close to intruder + keep intruder predicted away from goal
+        close_term = np.exp(-self.cspec.k_close * (max(0.0, d_DI_pred - rcap) / max(rcap, 1e-6)) ** 2)
+        safe_term = np.exp(-self.cspec.k_safe * (max(0.0, dsafe - d_Ig_pred) / max(dsafe, 1e-6)) ** 2)
+        R_pred_D = self.cspec.w_close * close_term + self.cspec.w_safe * safe_term
+
+        # intruder: be predicted-close to goal + avoid predicted capture
+        goal_term = np.exp(-self.cspec.k_goal * (max(0.0, d_Ig_pred - robj) / max(robj, 1e-6)) ** 2)
+        avoid_term = np.exp(-self.cspec.k_avoid * (max(0.0, rcap - d_DI_pred) / max(rcap, 1e-6)) ** 2)
+        R_pred_I = self.cspec.w_goal * goal_term + self.cspec.w_avoid * (1.0 - avoid_term)
+
+        # efficiency penalty (dv magnitude squared)
+        R_eff_D = -self.cspec.beta_dv * dvD2
+        R_eff_I = -self.cspec.beta_dv * dvI2
+
+        # boundary penalty
+        R_bound_D = -self.cspec.k_bound * (1.0 if clippedD else 0.0)
+        R_bound_I = -self.cspec.k_bound * (1.0 if clippedI else 0.0)
+
+        # terminal rewards
+        R_term_D = 0.0
+        R_term_I = 0.0
+        if caught:
+            R_term_D += self.cspec.R_cap
+            R_term_I -= self.cspec.R_cap
+        if reached:
+            R_term_I += self.cspec.R_obj
+            R_term_D -= self.cspec.R_obj
+        if timeout and (not caught) and (not reached):
+            R_term_D += self.cspec.R_timeout
+            R_term_I -= self.cspec.R_timeout
+
+        rD = self.cspec.lambda_pred * R_pred_D + self.cspec.lambda_term * R_term_D + self.cspec.lambda_eff * R_eff_D + R_bound_D
+        rI = self.cspec.lambda_pred * R_pred_I + self.cspec.lambda_term * R_term_I + self.cspec.lambda_eff * R_eff_I + R_bound_I
+
+        terminated = bool(caught or reached)
+        truncated = bool((not terminated) and timeout)
+
+        info = dict(
+            caught=caught, reached=reached, timeout=timeout,
+            d_DI=d_DI, d_Ig=d_Ig,
+            d_DI_pred=d_DI_pred, d_Ig_pred=d_Ig_pred,
+            r_obj=robj, r_cap=rcap, tp=tp
+        )
+
+        reward = float(rD if self.role == "defender" else rI)
+        return self._make_obs(self.role), reward, terminated, truncated, info
