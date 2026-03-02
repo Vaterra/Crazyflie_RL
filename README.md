@@ -21,3 +21,7 @@
 *To test agents against one another*
 
 `python3 agent_vs_agent.py`
+
+*To run against Assad's agent*
+
+`python3 -m Asaad.agent_vs_agent_2`
